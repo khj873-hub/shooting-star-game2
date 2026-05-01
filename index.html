@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌠 Shooting Star — Touch the Stars</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;700&family=Share+Tech+Mono&display=swap');
+
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:#000;
+  width:100vw;height:100vh;
+  overflow:hidden;
+  font-family:'Share Tech Mono',monospace;
+  cursor:none;
+}
+
+/* 웹캠 — 반투명 배경 */
+#webcam{
+  position:fixed;top:0;left:0;
+  width:100%;height:100%;
+  object-fit:cover;
+  transform:scaleX(-1);
+  z-index:0;
+  filter:brightness(0.35) saturate(0.6);
+  opacity:0.7;
+}
+
+/* 게임 캔버스 */
+#game-canvas{
+  position:fixed;top:0;left:0;
+  width:100%;height:100%;
+  z-index:10;pointer-events:none;
+}
+
+/* 랜드마크 캔버스 */
+#lm-canvas{
+  position:fixed;top:0;left:0;
+  width:100%;height:100%;
+  z-index:20;pointer-events:none;
+  transform:scaleX(-1);
+}
+
+/* HUD */
+#hud{position:fixed;inset:0;z-index:30;pointer-events:none;}
+
+/* 상단 스코어 */
+#score-bar{
+  position:absolute;top:0;left:0;right:0;
+  padding:18px 28px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:linear-gradient(to bottom,rgba(0,0,0,0.7),transparent);
+}
+.score-block{text-align:center;}
+.score-label{
+  font-size:9px;letter-spacing:3px;
+  color:rgba(200,200,255,0.45);text-transform:uppercase;
+  margin-bottom:3px;
+}
+.score-val{
+  font-family:'Noto Serif KR',serif;
+  font-size:32px;font-weight:700;
+  color:#fff;
+  text-shadow:0 0 20px rgba(150,150,255,0.8);
+  line-height:1;
+}
+.score-val.gold{color:#ffd700;text-shadow:0 0 20px rgba(255,215,0,0.8);}
+.score-val.red{color:#ff6b6b;text-shadow:0 0 20px rgba(255,100,100,0.8);}
+
+/* 중앙 당첨 이벤트 오버레이 */
+#event-overlay{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  pointer-events:none;opacity:0;
+}
+#event-bg{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at center, rgba(255,215,0,0.15) 0%, transparent 70%);
+}
+#event-text{
+  font-family:'Noto Serif KR',serif;
+  font-size:clamp(32px,7vw,72px);
+  font-weight:700;
+  color:#fff;
+  text-align:center;
+  line-height:1.3;
+  z-index:1;
+  text-shadow:
+    0 0 20px rgba(255,215,0,1),
+    0 0 40px rgba(255,215,0,0.8),
+    0 0 80px rgba(255,150,0,0.5);
+}
+#event-sub{
+  font-size:clamp(13px,2vw,18px);
+  letter-spacing:3px;
+  color:rgba(255,215,0,0.8);
+  margin-top:12px;
+  z-index:1;
+  text-shadow:0 0 10px rgba(255,215,0,0.8);
+}
+
+/* 하단 가이드 */
+#guide{
+  position:absolute;bottom:20px;left:50%;transform:translateX(-50%);
+  text-align:center;
+  font-size:10px;letter-spacing:2px;
+  color:rgba(200,200,255,0.35);
+}
+
+/* 웹캠 미니 */
+#cam-wrap{
+  position:absolute;bottom:20px;right:20px;
+  width:160px;height:120px;
+  border:1px solid rgba(200,200,255,0.2);
+  border-radius:4px;overflow:hidden;
+}
+#cam-small{width:160px;height:120px;display:block;opacity:.7;transform:scaleX(-1);}
+#lm-small{position:absolute;top:0;left:0;width:160px;height:120px;transform:scaleX(-1);}
+
+/* 로딩 */
+#loading{
+  position:fixed;inset:0;z-index:9999;
+  background:#000010;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+}
+#loading h2{
+  font-family:'Noto Serif KR',serif;
+  font-size:28px;font-weight:300;letter-spacing:6px;
+  color:rgba(200,200,255,.85);
+  text-shadow:0 0 30px rgba(150,150,255,.5);
+}
+#ld-bar{width:200px;height:1px;background:rgba(150,150,255,.12);}
+#ld-fill{height:100%;background:rgba(150,150,255,.7);box-shadow:0 0 8px rgba(150,150,255,.6);width:0;transition:width .4s;}
+#ld-msg{font-size:8px;letter-spacing:3px;color:rgba(150,150,255,.4);}
+
+/* 커서 */
+#cursor{
+  position:fixed;z-index:9998;
+  pointer-events:none;
+  width:36px;height:36px;
+  margin:-18px 0 0 -18px;
+  opacity:0;transition:opacity .2s;
+}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <h2>🌠 Shooting Star</h2>
+  <div id="ld-bar"><div id="ld-fill"></div></div>
+  <div id="ld-msg">LOADING STAR FIELD...</div>
+</div>
+
+<video id="webcam" autoplay playsinline muted></video>
+<canvas id="game-canvas"></canvas>
+<canvas id="lm-canvas"></canvas>
+
+<div id="cursor">
+  <svg viewBox="0 0 36 36" fill="none">
+    <circle cx="18" cy="18" r="14" stroke="rgba(255,255,200,0.8)" stroke-width="1.5"/>
+    <circle cx="18" cy="18" r="4" fill="rgba(255,255,200,0.9)"/>
+    <line x1="18" y1="0" x2="18" y2="10" stroke="rgba(255,255,200,0.5)" stroke-width="1"/>
+    <line x1="18" y1="26" x2="18" y2="36" stroke="rgba(255,255,200,0.5)" stroke-width="1"/>
+    <line x1="0" y1="18" x2="10" y2="18" stroke="rgba(255,255,200,0.5)" stroke-width="1"/>
+    <line x1="26" y1="18" x2="36" y2="18" stroke="rgba(255,255,200,0.5)" stroke-width="1"/>
+  </svg>
+</div>
+
+<div id="hud">
+  <!-- 스코어 바 -->
+  <div id="score-bar">
+    <div class="score-block">
+      <div class="score-label">터진 별</div>
+      <div class="score-val gold" id="hit-count">0</div>
+    </div>
+    <div class="score-block">
+      <div class="score-label">🌠 Shooting Star</div>
+      <div style="font-size:10px;letter-spacing:2px;color:rgba(200,200,255,0.4);margin-top:4px;">☝️ 검지로 별똥별을 터치하세요</div>
+    </div>
+    <div class="score-block">
+      <div class="score-label">당첨 횟수</div>
+      <div class="score-val red" id="win-count">0</div>
+    </div>
+  </div>
+
+  <!-- 당첨 이벤트 -->
+  <div id="event-overlay">
+    <div id="event-bg"></div>
+    <div id="event-text">🎉 당첨!</div>
+    <div id="event-sub">LUCKY STAR</div>
+  </div>
+
+  <div id="guide">☝️ 검지 하나로 별똥별 터치 &nbsp;|&nbsp; 맞추면 랜덤 당첨 이벤트 발생</div>
+</div>
+
+<!-- 미니 캠 -->
+<div id="cam-wrap">
+  <video id="cam-small" autoplay playsinline muted></video>
+  <canvas id="lm-small" width="160" height="120"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script>
+'use strict';
+
+// ── 로딩 ─────────────────────────────────────────
+function ld(p,m){
+  document.getElementById('ld-fill').style.width=p+'%';
+  document.getElementById('ld-msg').textContent=m;
+}
+
+// ── 캔버스 설정 ───────────────────────────────────
+const gameCanvas = document.getElementById('game-canvas');
+const lmCanvas   = document.getElementById('lm-canvas');
+const gCtx = gameCanvas.getContext('2d');
+const lCtx = lmCanvas.getContext('2d');
+const smCanvas = document.getElementById('lm-small');
+const smCtx = smCanvas.getContext('2d');
+
+function resize(){
+  gameCanvas.width = lmCanvas.width = window.innerWidth;
+  gameCanvas.height= lmCanvas.height= window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── 당첨 문구 ─────────────────────────────────────
+const WIN_MSGS = [
+  {main:'🎉 1등 당첨!',   sub:'축하합니다! 최고의 별입니다', color:'#ffd700'},
+  {main:'🌟 럭키스타!',   sub:'행운의 별똥별을 잡았어요',   color:'#fffaaa'},
+  {main:'✨ 특별 당첨!',  sub:'오늘의 행운이 찾아왔어요',   color:'#ff9ff3'},
+  {main:'🎊 대박 당첨!',  sub:'당신은 오늘의 주인공',       color:'#ff6b6b'},
+  {main:'💫 별빛 당첨!',  sub:'별이 당신을 선택했어요',     color:'#74b9ff'},
+  {main:'🔥 연속 당첨!',  sub:'믿을 수 없는 행운의 손',     color:'#fd79a8'},
+  {main:'🌈 무지개 당첨!',sub:'칠색의 행운이 가득',         color:'#a29bfe'},
+  {main:'⭐ 슈퍼스타!',   sub:'당신이 바로 슈퍼스타',       color:'#fdcb6e'},
+];
+
+// 꽝 문구
+const MISS_MSGS = [
+  {main:'💥 꽝!',    sub:'아쉽네요, 다시 도전!'},
+  {main:'😅 꽝~',   sub:'별이 도망갔어요'},
+  {main:'🌑 꽝!!',  sub:'운이 없었네요'},
+  {main:'😭 꽝!!!', sub:'다음엔 당첨될 거예요'},
+  {main:'💨 꽝',    sub:'아깝다, 조금만 더!'},
+];
+
+// 당첨 확률 5% (낮게)
+const WIN_CHANCE = 0.20;
+
+// ── Web Audio 사운드 ──────────────────────────────
+let audioCtx = null;
+
+function initAudio(){
+  if(audioCtx) return;
+  audioCtx = new(window.AudioContext||window.webkitAudioContext)();
+}
+
+// 별 터지는 사운드 (꽝)
+function playPopSound(){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // 짧고 둔탁한 팝
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(300, t);
+  o.frequency.exponentialRampToValueAtTime(80, t+0.12);
+  g.gain.setValueAtTime(0.4, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+0.14);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t+0.15);
+
+  // 노이즈 레이어
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*0.08, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(audioCtx.sampleRate*0.03));
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(0.25, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t+0.08);
+  src.connect(ng); ng.connect(audioCtx.destination);
+  src.start(t);
+}
+
+// 당첨 사운드 (밝고 화려한 차임)
+function playWinSound(){
+  if(!audioCtx) return;
+  const t = audioCtx.currentTime;
+  // 상승 화음
+  [523,659,784,1047,1319].forEach((f,i)=>{
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const dt = t + i*0.08;
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f, dt);
+    o.frequency.setValueAtTime(f*1.5, dt+0.15);
+    g.gain.setValueAtTime(0, dt);
+    g.gain.linearRampToValueAtTime(0.18, dt+0.04);
+    g.gain.exponentialRampToValueAtTime(0.001, dt+0.5);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(dt); o.stop(dt+0.55);
+  });
+  // 반짝 노이즈
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate*0.3, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(audioCtx.sampleRate*0.1));
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f2 = audioCtx.createBiquadFilter();
+  f2.type='highpass'; f2.frequency.value=2000;
+  const ng = audioCtx.createGain();
+  ng.gain.setValueAtTime(0.12, t);
+  ng.gain.exponentialRampToValueAtTime(0.001, t+0.3);
+  src.connect(f2); f2.connect(ng); ng.connect(audioCtx.destination);
+  src.start(t);
+}
+
+// ── 게임 상태 ─────────────────────────────────────
+let hitCount = 0;
+let winCount = 0;
+let eventActive = false;
+let eventTimer  = 0;
+
+// ── 별똥별 ────────────────────────────────────────
+class ShootingStar {
+  constructor(){
+    this.reset();
+  }
+  reset(){
+    const W = window.innerWidth, H = window.innerHeight;
+    // 상단 전체에서 시작
+    this.x  = W * (0.05 + Math.random() * 0.9);
+    this.y  = -20;
+    // 아래 방향 (약간 좌우 흔들림)
+    const angle = (80 + Math.random() * 20) * Math.PI / 180;
+    this.speed  = 5 + Math.random() * 6;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = Math.sin(angle) * this.speed;
+    this.radius = 6 + Math.random() * 8;
+    this.tail   = [];
+    this.maxTail= 18 + Math.floor(Math.random() * 12);
+    this.alive  = true;
+    this.hit    = false;
+    // 색상
+    const cols = ['#ffffff','#ffe8a3','#aaddff','#ffccee','#ccffee'];
+    this.color  = cols[Math.floor(Math.random() * cols.length)];
+    // 폭발 파티클
+    this.exploding  = false;
+    this.expParticles = [];
+    this.expTimer   = 0;
+    // 반짝임
+    this.twinkle = Math.random() * Math.PI * 2;
+  }
+
+  update(){
+    if(this.exploding){
+      this.expTimer++;
+      this.expParticles.forEach(p=>{
+        p.x += p.vx; p.y += p.vy;
+        p.vy += 0.12; p.vx *= 0.97;
+        p.life -= p.decay;
+        p.size *= 0.96;
+      });
+      if(this.expTimer > 60) this.alive = false;
+      return;
+    }
+
+    this.twinkle += 0.15;
+
+    // 꼬리에 현재 위치 추가
+    this.tail.push({x:this.x, y:this.y});
+    if(this.tail.length > this.maxTail) this.tail.shift();
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    const W = window.innerWidth, H = window.innerHeight;
+    if(this.x < -100 || this.y > H + 100){
+      this.alive = false;
+    }
+  }
+
+  explode(win){
+    this.exploding = true;
+    this.expParticles = [];
+    const count = win ? 60 : 30;
+    for(let i=0;i<count;i++){
+      const a = Math.random() * Math.PI * 2;
+      const sp = win ? (2+Math.random()*8) : (1+Math.random()*5);
+      const cols = win
+        ? ['#ffd700','#fff','#ffaa00','#fffaaa','#ff9900']
+        : ['#fff','#aaddff','#ffccee','#ffe8a3'];
+      this.expParticles.push({
+        x:this.x, y:this.y,
+        vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-2,
+        color:cols[Math.floor(Math.random()*cols.length)],
+        size: win ? (3+Math.random()*5) : (2+Math.random()*3),
+        life:1, decay: 0.015+Math.random()*0.02,
+      });
+    }
+  }
+
+  draw(ctx){
+    if(this.exploding){
+      this.expParticles.forEach(p=>{
+        if(p.life<=0)return;
+        ctx.save();
+        ctx.globalAlpha = p.life * 0.9;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size*p.life, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      });
+      return;
+    }
+
+    const tw = 0.85 + Math.sin(this.twinkle) * 0.15;
+
+    // 꼬리 그라데이션
+    if(this.tail.length > 1){
+      for(let i=1;i<this.tail.length;i++){
+        const t = i / this.tail.length;
+        const alpha = t * 0.7 * tw;
+        const width = t * this.radius * 0.9;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = width;
+        ctx.lineCap = 'round';
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 6 * t;
+        ctx.beginPath();
+        ctx.moveTo(this.tail[i-1].x, this.tail[i-1].y);
+        ctx.lineTo(this.tail[i].x,   this.tail[i].y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // 별 본체
+    ctx.save();
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 20 * tw;
+    // 외곽 글로우
+    const grd = ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,this.radius*2.5);
+    grd.addColorStop(0, this.color+'ff');
+    grd.addColorStop(0.4, this.color+'99');
+    grd.addColorStop(1, this.color+'00');
+    ctx.globalAlpha = 0.9 * tw;
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius*2.5, 0, Math.PI*2);
+    ctx.fill();
+    // 코어
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius*0.5*tw, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+
+    // 십자 반짝임
+    ctx.save();
+    ctx.globalAlpha = 0.5 * tw;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 0.8;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 10;
+    const cr = this.radius * 2.5 * tw;
+    ctx.beginPath();
+    ctx.moveTo(this.x-cr, this.y); ctx.lineTo(this.x+cr, this.y);
+    ctx.moveTo(this.x, this.y-cr); ctx.lineTo(this.x, this.y+cr);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 히트 판정
+  isHit(px, py){
+    if(this.exploding||!this.alive) return false;
+    const d = Math.hypot(px-this.x, py-this.y);
+    return d < this.radius * 3.5; // 넉넉한 히트박스
+  }
+}
+
+// ── 배경 별 (고정) ────────────────────────────────
+const bgStars = [];
+function initBgStars(){
+  const W=window.innerWidth, H=window.innerHeight;
+  for(let i=0;i<120;i++){
+    bgStars.push({
+      x:Math.random()*W, y:Math.random()*H,
+      r:Math.random()*1.5+0.3,
+      alpha:Math.random()*0.6+0.2,
+      twinkle:Math.random()*Math.PI*2,
+      speed:0.02+Math.random()*0.04,
+    });
+  }
+}
+initBgStars();
+
+function drawBgStars(ctx){
+  bgStars.forEach(s=>{
+    s.twinkle+=s.speed;
+    const a = s.alpha * (0.7+Math.sin(s.twinkle)*0.3);
+    ctx.save();
+    ctx.globalAlpha=a;
+    ctx.fillStyle='#fff';
+    ctx.shadowColor='#aaaaff'; ctx.shadowBlur=4;
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ── 별똥별 스폰 ───────────────────────────────────
+let stars = [];
+let spawnTimer = 0;
+let spawnInterval = 20; // 더 자주 스폰
+
+function spawnStar(){
+  stars.push(new ShootingStar());
+}
+
+// ── 이벤트 텍스트 파티클 ──────────────────────────
+let confetti = [];
+
+function spawnConfetti(win){
+  confetti = [];
+  const W=window.innerWidth, H=window.innerHeight;
+  const count = win ? 80 : 0;
+  for(let i=0;i<count;i++){
+    const cols=['#ffd700','#ff9900','#fff','#ffaaee','#aaddff','#fffaaa'];
+    confetti.push({
+      x:Math.random()*W, y:-20,
+      vx:(Math.random()-.5)*4,
+      vy:2+Math.random()*4,
+      rot:Math.random()*Math.PI*2,
+      rotV:(Math.random()-.5)*.15,
+      w:6+Math.random()*10,
+      h:4+Math.random()*6,
+      color:cols[Math.floor(Math.random()*cols.length)],
+      life:1, decay:0.006+Math.random()*0.008,
+    });
+  }
+}
+
+function drawConfetti(ctx){
+  confetti = confetti.filter(c=>{
+    c.x+=c.vx; c.y+=c.vy; c.vy+=0.06;
+    c.rot+=c.rotV; c.life-=c.decay;
+    if(c.life<=0)return false;
+    ctx.save();
+    ctx.globalAlpha=c.life;
+    ctx.translate(c.x,c.y); ctx.rotate(c.rot);
+    ctx.fillStyle=c.color;
+    ctx.fillRect(-c.w/2,-c.h/2,c.w,c.h);
+    ctx.restore();
+    return c.y < window.innerHeight+50;
+  });
+}
+
+// ── 당첨 이벤트 표시 ──────────────────────────────
+function showEvent(win){
+  const overlay = document.getElementById('event-overlay');
+  const textEl  = document.getElementById('event-text');
+  const subEl   = document.getElementById('event-sub');
+  const bgEl    = document.getElementById('event-bg');
+
+  if(win){
+    const msg = WIN_MSGS[Math.floor(Math.random()*WIN_MSGS.length)];
+    textEl.textContent = msg.main;
+    subEl.textContent  = msg.sub;
+    textEl.style.textShadow = `0 0 20px ${msg.color},0 0 40px ${msg.color},0 0 80px ${msg.color}88`;
+    textEl.style.color = '#fff';
+    subEl.style.color  = msg.color;
+    bgEl.style.background = `radial-gradient(ellipse at center, ${msg.color}22 0%, transparent 70%)`;
+    spawnConfetti(true);
+    winCount++;
+    document.getElementById('win-count').textContent = winCount;
+  } else {
+    // 꽝 — 랜덤 꽝 문구
+    const msg = MISS_MSGS[Math.floor(Math.random()*MISS_MSGS.length)];
+    textEl.textContent = msg.main;
+    subEl.textContent  = msg.sub;
+    textEl.style.color = '#aaaaaa';
+    textEl.style.textShadow = '0 0 16px rgba(150,150,150,0.6)';
+    subEl.style.color  = 'rgba(180,180,180,0.6)';
+    bgEl.style.background = 'radial-gradient(ellipse at center, rgba(80,80,80,0.12) 0%, transparent 70%)';
+  }
+
+  eventActive = true;
+  eventTimer  = 0;
+  overlay.style.transition = 'none';
+  overlay.style.opacity = '1';
+  overlay.style.transform = win ? 'scale(1.05)' : 'scale(0.95)';
+  setTimeout(()=>{
+    overlay.style.transition = 'all 0.3s ease';
+    overlay.style.transform = 'scale(1)';
+  },50);
+}
+
+function hideEvent(){
+  const overlay = document.getElementById('event-overlay');
+  overlay.style.transition = 'opacity 0.2s';
+  overlay.style.opacity = '0';
+  eventActive = false;
+}
+
+// ── 히트 처리 ─────────────────────────────────────
+function handleHit(star){
+  if(star.hit||star.exploding) return;
+  star.hit = true;
+  hitCount++;
+  document.getElementById('hit-count').textContent = hitCount;
+
+  const win = Math.random() < WIN_CHANCE;
+  star.explode(win);
+  showEvent(win);
+
+  // 사운드
+  initAudio();
+  if(win) playWinSound();
+  else    playPopSound();
+
+  // 히트 카운트 숫자 팡팡 애니메이션
+  const el=document.getElementById('hit-count');
+  el.style.transform='scale(1.5)';
+  el.style.transition='transform 0.15s';
+  setTimeout(()=>{ el.style.transform='scale(1)'; },150);
+}
+
+// ── 손 상태 ───────────────────────────────────────
+const hs = { ok:false, lm:null, gesture:'NONE', indexX:0, indexY:0 };
+
+function lmXY(lm,i){
+  return {
+    x: (1-lm[i].x)*window.innerWidth,
+    y:  lm[i].y   *window.innerHeight,
+  };
+}
+
+// ── 제스처 분류 ───────────────────────────────────
+function fingerStates(lm){
+  const t=[8,12,16,20],p=[6,10,14,18],m=[5,9,13,17];
+  return t.map((ti,i)=>lm[ti].y<lm[p[i]].y-.025&&lm[p[i]].y<lm[m[i]].y+.04);
+}
+function classify(lm){
+  const f=fingerStates(lm),n=f.filter(Boolean).length;
+  if(n===0)return'FIST';
+  if(f[0]&&!f[1]&&!f[2]&&!f[3])return'POINT';
+  if(n>=3)return'OPEN';
+  return'NEUTRAL';
+}
+
+// ── 스켈레톤 (미니캠용) ───────────────────────────
+const CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]];
+
+function drawSkel(ctx, lm, w, h){
+  ctx.strokeStyle='rgba(200,200,255,0.5)';
+  ctx.lineWidth=1;
+  CONN.forEach(([a,b])=>{
+    ctx.beginPath();
+    ctx.moveTo(lm[a].x*w,lm[a].y*h);
+    ctx.lineTo(lm[b].x*w,lm[b].y*h);
+    ctx.stroke();
+  });
+  // 검지 끝 강조
+  const tip=lm[8];
+  const grd=ctx.createRadialGradient(tip.x*w,tip.y*h,0,tip.x*w,tip.y*h,10);
+  grd.addColorStop(0,'rgba(255,255,200,0.9)');
+  grd.addColorStop(1,'rgba(255,255,200,0)');
+  ctx.fillStyle=grd;
+  ctx.beginPath(); ctx.arc(tip.x*w,tip.y*h,10,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,200,0.9)';
+  ctx.beginPath(); ctx.arc(tip.x*w,tip.y*h,2.5,0,Math.PI*2); ctx.fill();
+}
+
+// ── 커서 (검지 끝 위치) ───────────────────────────
+const cursorEl=document.getElementById('cursor');
+let prevHitFrame=0; // 연속 히트 방지
+let frameCount=0;
+
+// ── 렌더 루프 ─────────────────────────────────────
+function render(){
+  requestAnimationFrame(render);
+  frameCount++;
+
+  const W=window.innerWidth, H=window.innerHeight;
+
+  // 게임 캔버스 클리어
+  gCtx.clearRect(0,0,W,H);
+
+  // 배경 별
+  drawBgStars(gCtx);
+
+  // 별똥별 스폰
+  spawnTimer++;
+  if(spawnTimer >= spawnInterval){
+    spawnTimer=0;
+    spawnInterval = 15+Math.floor(Math.random()*20);
+    // 매번 1~3개 동시 스폰
+    const count = 1 + Math.floor(Math.random()*3);
+    for(let i=0;i<count;i++) spawnStar();
+  }
+
+  // 이벤트 타이머
+  if(eventActive){
+    eventTimer++;
+    if(eventTimer > 40) hideEvent();
+  }
+
+  // 별똥별 업데이트 & 그리기
+  stars = stars.filter(s=>{
+    s.update();
+    s.draw(gCtx);
+    return s.alive;
+  });
+
+  // 콘페티
+  drawConfetti(gCtx);
+
+  // 랜드마크 캔버스 클리어
+  lCtx.clearRect(0,0,W,H);
+
+  // 손 처리
+  if(hs.ok && hs.lm){
+    const lm=hs.lm;
+    hs.gesture=classify(lm);
+
+    // 검지 끝 위치
+    const idx=lmXY(lm,8);
+    hs.indexX=idx.x; hs.indexY=idx.y;
+
+    // 커서 위치
+    cursorEl.style.opacity='1';
+    cursorEl.style.left=idx.x+'px';
+    cursorEl.style.top=idx.y+'px';
+
+    // POINT 제스처일 때만 히트 판정
+    if(hs.gesture==='POINT' && frameCount-prevHitFrame > 8){
+      // 검지 끝 주변 글로우 (게임 캔버스)
+      lCtx.save();
+      const gr=lCtx.createRadialGradient(idx.x,idx.y,0,idx.x,idx.y,30);
+      gr.addColorStop(0,'rgba(255,255,200,0.4)');
+      gr.addColorStop(1,'rgba(255,255,200,0)');
+      lCtx.fillStyle=gr;
+      lCtx.beginPath(); lCtx.arc(idx.x,idx.y,30,0,Math.PI*2); lCtx.fill();
+      lCtx.restore();
+
+      // 별 히트 체크
+      stars.forEach(s=>{
+        if(s.isHit(idx.x, idx.y)){
+          handleHit(s);
+          prevHitFrame=frameCount;
+        }
+      });
+    }
+
+    // 미니캠 스켈레톤
+    smCtx.clearRect(0,0,160,120);
+    drawSkel(smCtx, lm, 160, 120);
+
+  } else {
+    cursorEl.style.opacity='0';
+    smCtx.clearRect(0,0,160,120);
+  }
+}
+requestAnimationFrame(render);
+
+// ── MediaPipe ─────────────────────────────────────
+ld(50,'LOADING HAND AI...');
+const videoEl = document.getElementById('webcam');
+const camSmall = document.getElementById('cam-small');
+
+const handsMP=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+handsMP.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.72,minTrackingConfidence:.6});
+handsMP.onResults(res=>{
+  if(res.multiHandLandmarks?.length>0){
+    hs.ok=true; hs.lm=res.multiHandLandmarks[0];
+  } else {
+    hs.ok=false; hs.lm=null;
+  }
+});
+
+// ── 카메라 ───────────────────────────────────────
+ld(80,'OPENING CAMERA...');
+(async()=>{
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia(
+      {video:{width:1280,height:720,facingMode:'user'}}
+    );
+    videoEl.srcObject=stream;
+    camSmall.srcObject=stream;
+    new Camera(videoEl,{
+      onFrame:async()=>await handsMP.send({image:videoEl}),
+      width:1280,height:720
+    }).start();
+    ld(100,'READY');
+  }catch(e){
+    console.warn('Camera denied');
+    ld(100,'NO CAMERA — localhost에서 실행하세요');
+  }
+  setTimeout(()=>{
+    const el=document.getElementById('loading');
+    el.style.transition='opacity .8s';
+    el.style.opacity='0';
+    setTimeout(()=>el.remove(),900);
+  },400);
+})();
+</script>
+</body>
+</html>
